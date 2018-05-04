@@ -1,0 +1,1230 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+	<title>DAS GAME</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link rel=stylesheet href="css/base.css"/>
+</head>
+<body>
+
+<!--<script src="js/Three.js"></script>-->
+<script src="js/Detector.js"></script>
+<script src="js/Stats.js"></script>
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+
+
+<script src="http://mrdoob.github.com/three.js/build/three.min.js"></script>
+
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/CopyShader.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/HorizontalBlurShader.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/VerticalBlurShader.js"></script>
+
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/RenderPass.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/MaskPass.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="shaders/StaticShader.js"></script>
+	
+	
+<!-- Simplfied gamepad interaction (patched version) -->
+<script src="js/gamepad_uncompressed.js"></script>
+
+
+<!-- ---------------- Custom Shader Code ------------------------ -->
+<script id="vertexShader" type="x-shader/x-vertex">
+varying vec2 vUv;
+void main() 
+{ 
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+</script>
+
+<!-- fragment shader a.k.a. pixel shader -->
+<script id="fragmentShader" type="x-shader/x-vertex"> 
+uniform sampler2D baseTexture;
+uniform float baseSpeed;
+uniform sampler2D noiseTexture;
+uniform float noiseScale;
+uniform float alpha;
+uniform float time;
+
+varying vec2 vUv;
+void main() 
+{
+	vec2 uvTimeShift = vUv + vec2( -0.7, 1.5 ) * time * baseSpeed;	
+	vec4 noiseGeneratorTimeShift = texture2D( noiseTexture, uvTimeShift );
+	vec2 uvNoiseTimeShift = vUv + noiseScale * vec2( noiseGeneratorTimeShift.r, noiseGeneratorTimeShift.b );
+	vec4 baseColor = texture2D( baseTexture, uvNoiseTimeShift );
+
+	baseColor.a = alpha;
+	gl_FragColor = baseColor;
+}  
+</script>
+<!-- ----------------------------------------------------------- -->
+
+<audio loop="loop" autoplay="autoplay">  
+		<source src="audio/The Living Tombstone - Spooky Scary Skeletons remix.mp3" /> 
+</audio> 
+ 
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px;font-size:500%;"></div>
+<label id="levelTxt" style="position:absolute; left:10px;top:10px; font-size:30px; color:white;"></label>
+<label id="zivljenjaTxt" style="position:absolute; left:10px;top:40px; font-size:30px; color:white;">Zivljenja: 3</label>
+    <label id="narrationText" style="position:absolute; left:30px;top:60%; font-size:50px; color:white;">Pozdravljen !! <p> Na desni je miza kateri se priblizaj za nadaljna navodila!</label>
+
+<script>
+
+
+// MAIN
+
+// standard global variables
+var container, scene, camera, renderer, controls, stats, spotlight, crossHairH;
+var keyboard = new THREEx.KeyboardState();
+var clock = new THREE.Clock();
+var skyBox;
+// custom global variables
+var person; 
+var move;
+var flighttimer = Date.now();
+var gravity = new THREE.Vector3(0,-30,0);
+var DiceBlue;
+var obstacles = [];
+var obstaclesLab = [];
+var movingobstacles = [];
+var enemies = [];
+var dicemove = 1;
+var k3 = 1;
+var k0 = -1;
+var cubex;
+var DiceBlue2;
+var vseStene = [];
+var stenaZ;
+var labStene=[];
+var token;
+var skale;
+var osebaImaToken;
+var STlevel  = 0;
+var pogovor = false;
+var casPogovMiza, casLucUgasjena, casJeBlurry, casJeStatika, casLucRdeca;
+var ghostMove = 100;
+var jeBlurry = false;
+var shaderTime = 0;
+var jeStatika = false;
+var zivljenja = 3;
+var playerMoveEffect = false;
+var jeUgasjena = false;
+for (var x = 1; x < 22; x++) {
+    vseStene.push(new THREE.CubeGeometry(50, 500, x * 500));
+}
+var tokenT = THREE.ImageUtils.loadTexture("images/blue-glowy.jpg");
+init();
+animate();
+
+// FUNCTIONS 		
+function init() 
+{
+	// SCENE
+	scene = new THREE.Scene();
+
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 1, FAR = 20000;
+	camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT, NEAR, FAR);
+	scene.add(camera);
+	
+	// RENDERER
+	if ( Detector.webgl )
+		renderer = new THREE.WebGLRenderer( {antialias:true} );
+	else
+		renderer = new THREE.CanvasRenderer(); 
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	container = document.getElementById( 'ThreeJS' );
+	container.appendChild( renderer.domElement );
+	
+	 //BLURRY
+	composer = new THREE.EffectComposer(renderer);
+	composer.addPass(new THREE.RenderPass(scene, camera));
+
+	hblur = new THREE.ShaderPass(THREE.HorizontalBlurShader);
+	composer.addPass(hblur);
+
+	vblur = new THREE.ShaderPass(THREE.VerticalBlurShader);
+	vblur.renderToScreen = true;
+	composer.addPass(vblur);
+	
+	composer2= new THREE.EffectComposer(renderer);
+	composer2.addPass(new THREE.RenderPass(scene, camera));
+	statics = new THREE.ShaderPass(THREE.StaticShader);
+	statics.renderToScreen = true;
+	composer2.addPass(statics);
+	statics.uniforms[ "amount"].value = 1;
+	statics.uniforms[ "size"].value = 1;
+	
+	
+	// EVENTS
+	THREEx.WindowResize(renderer, camera);
+	THREEx.FullScreen.bindKey({ charCode : 'm'.charCodeAt(0) });
+	
+	// STATS
+	stats = new Stats();
+	stats.domElement.style.position = 'absolute';
+	stats.domElement.style.bottom = '0px';
+	stats.domElement.style.zIndex = 100;
+	container.appendChild( stats.domElement );
+	
+	
+	
+	// LIGHT
+	renderer.shadowMapEnabled = true;
+	spotlight = new THREE.SpotLight(0x93c572);
+	spotlight.shadowDarkness = 1;
+	spotlight.shadowMapWidth = 1024;
+	spotlight.shadowMapHeight = 1024;
+	spotlight.shadowCameraNear = 10;
+	spotlight.shadowCameraFar = 10;
+	spotlight.shadowCameraFov = 10;
+    spotlight.intensity = 3;
+
+
+
+	spotlight.castShadow = true;
+	
+
+	generatePerson();
+
+	generateFloor();
+	generateTokens();
+	
+	
+	
+	var loader = new THREE.JSONLoader();
+    loader.load('./models/casper.json', function(geometry, materials) {
+        duhec = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: THREE.ImageUtils.loadTexture("images/Creature.png"), shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+		duhec.scale.set(100, 100, 100);
+		duhec.rotateZ(Math.PI);
+
+		DiceBlue2 = new THREE.Object3D();
+		DiceBlue2.add(duhec);
+		var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+		var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+		DiceBlue2.position.set(randX*500, 200, randY*500);
+		enemies.push(DiceBlue2);
+		scene.add(DiceBlue2);
+    });
+	
+	
+	
+	
+	
+
+	// Mouse Look (Free Look) controls 
+	this.mouseLook = { x:0, y:0 };
+	document.addEventListener( 'click', function ( event ) 
+	{
+		var havePointerLock = 'pointerLockElement' in document ||
+						   'mozPointerLockElement' in document ||
+						'webkitPointerLockElement' in document;
+		if ( !havePointerLock ) return;
+		
+		var element = document.body;
+		// Ask the browser to lock the pointer
+		element.requestPointerLock = element.requestPointerLock ||
+								  element.mozRequestPointerLock ||
+							   element.webkitRequestPointerLock;
+		// Ask the browser to lock the pointer
+		element.requestPointerLock();
+		
+		// Hook pointer lock state change events
+		document.addEventListener(      'pointerlockchange', pointerLockChange, false);
+		document.addEventListener(   'mozpointerlockchange', pointerLockChange, false);
+		document.addEventListener('webkitpointerlockchange', pointerLockChange, false);
+		
+		
+	}, false );
+}
+
+
+function generateFloor() {
+    
+
+
+    var floorT = THREE.ImageUtils.loadTexture("images/fancy_floor.jpg");
+	var wallT = THREE.ImageUtils.loadTexture("images/fancy_wall.jpg");
+    var cubeg = new THREE.CubeGeometry(11000, 50, 11000);
+    
+
+    var floor = new THREE.Mesh(cubeg, new THREE.MeshPhongMaterial({ map: floorT }));
+    floor.position.set(5250, -30, 5250);
+    obstacles.push(floor);
+    scene.add(floor);
+	
+	var tlazhodg = new THREE.CubeGeometry(5000, 50, 500);
+	var tlazhod = new THREE.Mesh(tlazhodg, new THREE.MeshPhongMaterial({ map: floorT , shading: THREE.FlatShading, vertexColors: THREE.VertexColors}));
+    tlazhod.position.set(6*500-250, -30,  -1500);
+    obstacles.push(tlazhod);
+    scene.add(tlazhod);
+	
+	
+	
+	
+	var tlacoridorg = new THREE.CubeGeometry(500, 50, 2500);
+	var tlacoridor = new THREE.Mesh(tlacoridorg, new THREE.MeshPhongMaterial({ map: floorT ,shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    tlacoridor.position.set(0, -30,  -1500);
+    obstacles.push(tlacoridor);
+    scene.add(tlacoridor);
+	
+	
+	spotlightzhod = new THREE.SpotLight(0xff0000);
+	spotlightzhod.position.set(0, 400,  -250);
+	spotlightzhod.intensity = 3;
+	scene.add(spotlightzhod);
+	
+	var tarcalucG = new THREE.CubeGeometry(1, 1, 1);
+	tarcaLuc = new THREE.Mesh(tarcalucG, new THREE.MeshPhongMaterial({ map: floorT  }));
+	tarcaLuc.position.set(0, -500,  -250);
+	scene.add(tarcaLuc);
+	spotlightzhod.target = tarcaLuc;
+	
+	
+	var tlasobag = new THREE.CubeGeometry(1000, 50, 1000);
+	var tlasoba = new THREE.Mesh(tlasobag, new THREE.MeshPhongMaterial({ map: floorT , shading: THREE.FlatShading, vertexColors: THREE.VertexColors}));
+    tlasoba.position.set(250, -30, -3250);
+    obstacles.push(tlasoba);
+    scene.add(tlasoba);
+
+
+  
+    //Labirint--------------------------------------------------------------------------------------------->
+    for(var y = 0; y<5;y++)
+	{
+		var labirint = generateLabirint(0, 0, 21, 21);
+		var labTrenutni =[];
+		for (var x = 0; x < labirint.length; x++) {
+			if (labirint[x].dolzina != 0) {
+				var stenaC = new THREE.CubeGeometry(50, 500, labirint[x].dolzina * 500);
+				var stena = new THREE.Mesh(vseStene[labirint[x].dolzina - 1], new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+				stena.position.set(labirint[x].x * 500, 250, labirint[x].y * 500);
+				stena.rotateY(labirint[x].orientacija);
+				stena.castShadow = true;
+				stena.receiveShadow = true;
+				labTrenutni.push(stena);
+			}
+		}
+		labStene.push(labTrenutni);
+	}
+	for(var x = 0; x< labStene[0].length;x++)
+	{
+		obstaclesLab.push(labStene[0][x]);
+		scene.add(labStene[0][x]);
+	}
+
+    //--------------------------------------------------------------------dodajanje zunanjih zidov
+    var stenaZunaj = new THREE.CubeGeometry(50, 500, 44 * 250);
+    //severna stena
+    var stenaS = new THREE.Mesh(stenaZunaj,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    stenaS.position.set(21 * 500 + 250, 250, 10 * 500 + 250);
+    stenaS.receiveShadow = true;
+    stenaS.castShadow = true;
+    obstacles.push(stenaS);
+    scene.add(stenaS);
+
+    //južna stena
+    var stenaJ = new THREE.Mesh(stenaZunaj,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    stenaJ.position.set(-250, 250, 10 * 500 + 250);
+    stenaJ.receiveShadow = true;
+    stenaJ.castShadow = true;
+    obstacles.push(stenaJ);
+    scene.add(stenaJ);
+
+    //vshodna stena
+    var stenaV = new THREE.Mesh(stenaZunaj,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    stenaV.position.set(10 * 500 + 250, 250, 21 * 500 + 250);
+    stenaV.rotateY(Math.PI * 1 / 2);
+    stenaV.receiveShadow = true;
+    stenaV.castShadow = true;
+    obstacles.push(stenaV);
+    scene.add(stenaV);
+
+
+    //zahodna stena
+    stenaZ = new THREE.Mesh(stenaZunaj,  new THREE.MeshPhongMaterial({ map:wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    stenaZ.position.set(10* 500 + 250, 250, -250);
+    stenaZ.rotateY(Math.PI * 1 / 2);
+    stenaZ.receiveShadow = true;
+    stenaZ.castShadow = true;
+    obstacles.push(stenaZ);
+    scene.add(stenaZ);
+
+	
+	//dodatna scena za zgodbo
+	
+	//stena desna za vhod
+	var stenaVhodD = new THREE.CubeGeometry(50, 500, 7*500);
+	var vhodD = new THREE.Mesh(stenaVhodD ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    vhodD.position.set(-250, 250, 3.5*-500-250);
+	vhodD.receiveShadow = true;
+    vhodD.castShadow = true;
+    obstacles.push(vhodD);
+    scene.add(vhodD);
+	
+	//stena levo za vhod
+	var stenaVhodL = new THREE.CubeGeometry(50, 500, 2*500);
+	var vhodL = new THREE.Mesh(stenaVhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    vhodL.position.set(250, 250, -750);
+	vhodL.receiveShadow = true;
+    vhodL.castShadow = true;
+    obstacles.push(vhodL);
+    scene.add(vhodL);
+	
+	//stena leva pri izhodu
+	var stenaIzhodL = new THREE.CubeGeometry(50, 500, 10*500);
+	var izhodL = new THREE.Mesh(stenaIzhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    izhodL.position.set(6*500-250, 250, -1250);
+	izhodL.rotateY(Math.PI * 1 / 2);
+	izhodL.receiveShadow = true;
+    izhodL.castShadow = true;
+    obstacles.push(izhodL);
+    scene.add(izhodL);
+	
+	//stena desno pri izhodu
+	var izhodD = new THREE.Mesh(stenaIzhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    izhodD.position.set(6*500-250, 250, -1750);
+	izhodD.rotateY(Math.PI * 1 / 2);
+	izhodD.receiveShadow = true;
+    izhodD.castShadow = true;
+    obstacles.push(izhodD);
+    scene.add(izhodD);
+	
+	//hodnik do sobe desno
+	var coridorD = new THREE.Mesh(stenaVhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    coridorD.position.set(250, 250, -2250);
+	coridorD.receiveShadow = true;
+    coridorD.castShadow = true;
+    obstacles.push(coridorD);
+    scene.add(coridorD);
+	
+	//stena soba sever
+	var sobaS = new THREE.Mesh(stenaVhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    sobaS.position.set(750, 250, -3250);
+	sobaS.receiveShadow = true;
+    sobaS.castShadow = true;
+    obstacles.push(sobaS);
+    scene.add(sobaS);
+	
+	//stena sove vzhod
+	var sobaVM = new THREE.CubeGeometry(50, 500, 500);
+	var sobaV = new THREE.Mesh(sobaVM,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    sobaV.position.set(500, 250, -2750);
+	sobaV.rotateY(Math.PI * 1 / 2);
+	sobaV.receiveShadow = true;
+    sobaV.castShadow = true;
+    obstacles.push(sobaV);
+    scene.add(sobaV);
+	
+	//stena sobe jug
+	var sobaJ = new THREE.Mesh(stenaVhodL ,  new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    sobaJ.position.set(250, 250, -3750);
+	sobaJ.rotateY(Math.PI * 1 / 2);
+	sobaJ.receiveShadow = true;
+    sobaJ.castShadow = true;
+    obstacles.push(sobaJ);
+    scene.add(sobaJ);
+	
+	//izhodna vrata
+	var vrata = new THREE.Mesh(sobaVM,  new THREE.MeshPhongMaterial({ map: THREE.ImageUtils.loadTexture("images/exitVrata.jpg"), shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+    vrata.position.set(11*500-250, 250, -1500);
+	vrata.receiveShadow = true;
+    vrata.castShadow = true;
+    obstacles.push(vrata);
+    scene.add(vrata);
+
+	
+	//dodajanje kamere
+
+	var loader = new THREE.JSONLoader();
+    loader.load('./models/kamera.json', function(geometry, materials) {
+        mesh = new THREE.Mesh(geometry, new THREE.MeshFaceMaterial(materials));
+		mesh.position.set(-190, 470, -3690);
+		mesh.scale.set(500, 500, 500);
+		mesh.rotateY(Math.PI * 1 / 6);
+        scene.add(mesh);
+    });
+	
+	//dodajanje mize
+    loader.load('./models/miza.json', function(geometry, materials) {
+        skale = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: THREE.ImageUtils.loadTexture("images/rock.jpg"), shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+		skale.position.set(250, -30, -3250);
+		skale.scale.set(25, 25, 25);
+		obstacles.push(skale);
+        scene.add(skale);
+    });
+	
+	//dodajanje gum
+	var gumeT = THREE.ImageUtils.loadTexture("images/tire.jpg");
+	for(var x = 0; x<10;x++)
+	{
+		loader.load('./models/tires.json', function(geometry, materials) {
+			var randX = Math.floor((Math.random() * (22)) + 1);
+			var randY = Math.floor((Math.random() * (22)) + 1);
+			gume = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: gumeT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+			gume.position.set(randX*500+150, 0, randY*500+150);
+			gume.scale.set(200, 200, 200);
+			scene.add(gume);
+		});
+	}
+	
+	
+	
+	
+	
+	//dodajanje miz
+	for(var x = 0; x<10;x++)
+	{
+		loader.load('./models/table.json', function(geometry, materials) {
+			var randX = Math.floor((Math.random() * (22)) + 1);
+			var randY = Math.floor((Math.random() * (22)) + 1);
+			miza = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: wallT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+			miza.position.set(randX*500+150, 100, randY*500+150);
+			miza.scale.set(3, 3, 3);
+			scene.add(miza);
+		});
+	}
+	
+	
+	
+	//dodajanje smeti
+	var smetiT = THREE.ImageUtils.loadTexture("images/trash.jpg");
+	for(var x = 0; x<10;x++)
+	{
+		loader.load('./models/trash.json', function(geometry, materials) {
+			var randX = Math.floor((Math.random() * (22)) + 1);
+			var randY = Math.floor((Math.random() * (22)) + 1);
+			smeti = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: smetiT, shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+			smeti.position.set(randX*500+150, 0, randY*500+150);
+			smeti.scale.set(80, 80, 80);
+			scene.add(smeti);
+		});
+	}
+	
+	
+	
+}
+
+function generateLabirint(minX, minY, maxX, maxY) {
+    var lab = [];
+    if (Math.abs(minX - maxX) <= 1 || Math.abs(minY - maxY) <= 1) {
+        return lab;
+    }
+    var randX = Math.floor((Math.random() * (maxX - minX)) + minX);
+    var randY = Math.floor((Math.random() * (maxY - minY)) + minY);
+    var randZidi = Math.floor((Math.random() * 4) + 1);
+    var zidEna;
+    var zidDva;
+    var zidTri;
+    switch (randZidi) {
+        case 1:
+            zidEna = Math.floor((Math.random() * (randX - minX)) + minX);//desno
+            zidDva = Math.floor((Math.random() * (randY - minY)) + minY);//dol
+            zidTri = Math.floor((Math.random() * (maxX - randX)) + randX);//levo
+
+
+            var dolEna = Math.abs(minX - zidEna);
+            var dolDva = Math.abs((zidEna + 1) - (zidTri));
+            var dolTri = Math.abs(maxX - (zidTri));
+            var dolStiri = Math.abs(minY - zidDva);
+            var dolPet = Math.abs(maxY - zidDva);
+
+            lab.push(new kordinate((minX + zidEna - 1) / 2, randY + 0.5, dolEna, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidEna) + (zidTri)) / 2, randY + 0.5, dolDva, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidTri) + (maxX) + 1) / 2, randY + 0.5, dolTri, Math.PI * 1 / 2));
+
+            lab.push(new kordinate(randX + 0.5, (minY + zidDva - 1) / 2, dolStiri, 0));
+            lab.push(new kordinate(randX + 0.5, (zidDva + maxY + 1) / 2, dolPet, 0));
+
+            break;
+        case 2:
+            zidEna = Math.floor((Math.random() * (maxY - randY)) + randY); //gor
+            zidDva = Math.floor((Math.random() * (randY - minY)) + minY);//dol
+            zidTri = Math.floor((Math.random() * (maxX - randX)) + randX);//levo
+
+            var dolEna = Math.abs(minY - zidDva);
+            var dolDva = Math.abs((zidDva + 1) - (zidEna));
+            var dolTri = Math.abs(maxY - (zidEna));
+            var dolStiri = Math.abs(minX - zidTri);
+            var dolPet = Math.abs(maxX - zidTri);
+
+            lab.push(new kordinate(randX + 0.5, (minY + zidDva - 1) / 2, dolEna, 0));
+            lab.push(new kordinate(randX + 0.5, ((zidEna) + (zidDva)) / 2, dolDva, 0));
+            lab.push(new kordinate(randX + 0.5, ((zidEna) + (maxY) + 1) / 2, dolTri, 0));
+
+            lab.push(new kordinate((minX + zidTri - 1) / 2, randY + 0.5, dolStiri, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidTri + maxX) + 1) / 2, randY + 0.5, dolPet, Math.PI * 1 / 2));
+
+            break;
+        case 3:
+            zidEna = Math.floor((Math.random() * (maxY - randY)) + randY); //gor
+            zidDva = Math.floor((Math.random() * (randX - minX)) + minX);//desno
+            zidTri = Math.floor((Math.random() * (maxX - randX)) + randX);//levo
+
+            var dolEna = Math.abs(minX - zidDva);
+            var dolDva = Math.abs((zidDva + 1) - (zidTri));
+            var dolTri = Math.abs(maxX - (zidTri));
+            var dolStiri = Math.abs(minY - zidEna);
+            var dolPet = Math.abs(maxY - zidEna);
+
+            lab.push(new kordinate((minX + zidDva - 1) / 2, randY + 0.5, dolEna, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidDva) + (zidTri)) / 2, randY + 0.5, dolDva, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidTri) + (maxX) + 1) / 2, randY + 0.5, dolTri, Math.PI * 1 / 2));
+
+            lab.push(new kordinate(randX + 0.5, (minY + zidEna - 1) / 2, dolStiri, 0));
+            lab.push(new kordinate(randX + 0.5, (zidEna + maxY + 1) / 2, dolPet, 0));
+
+            break;
+        case 4:
+            zidEna = Math.floor((Math.random() * (maxY - randY)) + randY); //gor
+            zidDva = Math.floor((Math.random() * (randX - minX)) + minX);//desno
+            zidTri = Math.floor((Math.random() * (randY - minY)) + minY);//dol
+
+            var dolEna = Math.abs(minY - zidTri);
+            var dolDva = Math.abs((zidTri + 1) - (zidEna));
+            var dolTri = Math.abs(maxY - (zidEna));
+            var dolStiri = Math.abs(minX - zidDva);
+            var dolPet = Math.abs(maxX - zidDva);
+
+            lab.push(new kordinate(randX + 0.5, (minY + zidTri - 1) / 2, dolEna, 0));
+            lab.push(new kordinate(randX + 0.5, ((zidEna) + (zidTri)) / 2, dolDva, 0));
+            lab.push(new kordinate(randX + 0.5, ((zidEna) + (maxY) + 1) / 2, dolTri, 0));
+
+            lab.push(new kordinate((minX + (zidDva - 1)) / 2, randY + 0.5, dolStiri, Math.PI * 1 / 2));
+            lab.push(new kordinate(((zidDva + maxX) + 1) / 2, randY + 0.5, dolPet, Math.PI * 1 / 2));
+
+            break;
+    }
+
+    lab.push.apply(lab, generateLabirint(minX, minY, randX - 1, randY - 1));
+    lab.push.apply(lab, generateLabirint(randX + 1, minY, maxX, randY - 1));
+    lab.push.apply(lab, generateLabirint(randX + 1, randY + 1, maxX, maxY));
+    lab.push.apply(lab, generateLabirint(minX, randY + 1, randX - 1, maxY));
+
+    return lab
+}
+
+function kordinate(x, y, dolzina, kot) {
+    this.x = x;
+    this.y = y;
+    this.dolzina = dolzina;
+    this.orientacija = kot;
+}
+function generatePerson() {
+
+	boundingG = new THREE.CubeGeometry(100, 190, 100);
+    boundingM = new THREE.MeshBasicMaterial({ color: 0xff0000, visible: false });
+    person = new THREE.Mesh(boundingG, boundingM);
+    person.add(camera);
+    camera.position.set(0, 185, 0); 
+	var crossHairG = new THREE.CubeGeometry(0.05, 0.3, 0);
+	crossHairH = new THREE.Mesh(crossHairG, new THREE.MeshBasicMaterial( {color:0xffffff}   )  );
+	var crossHairV = new THREE.Mesh(crossHairG, new THREE.MeshBasicMaterial( {color:0xffffff}   )  );
+	camera.add(crossHairH);
+	crossHairH.position.set(0,0,-10);
+	camera.add(crossHairV);
+	crossHairV.position.set(0,0,-10);
+	crossHairV.rotateZ(Math.PI * 1 / 2);
+	
+    person.position.set(4954, 150, -1515);
+    person.rotation.y = Math.PI / 2.0;
+	
+	camera.add(spotlight);
+	spotlight.target = crossHairH;
+	spotlight.position.set(0,0,20);
+	
+    person.velocity = new THREE.Vector3(0, 0, 0);
+    scene.add(person);
+
+}
+
+function generateTokens() {
+	var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+    var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+    var cubeMaterials = new THREE.MeshPhongMaterial({ map: tokenT });
+	var cubeGeometry = new THREE.CubeGeometry(100, 100, 100, 1, 1, 1);
+	cube = new THREE.Mesh(cubeGeometry, cubeMaterials);
+	token = new THREE.Object3D();
+	token.add(cube);
+	token.position.set(randX*500, 200, randY*500);
+	scene.add(token);
+}
+
+function moveCallback(e)
+{
+	var movementX = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
+	var movementY = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
+	// store movement amounts; will be processed by update function.
+	mouseLook.x += movementX;
+	mouseLook.y += movementY;
+}
+
+function pointerLockChange(event)
+{
+	var element = document.body;
+	if (document.pointerLockElement       === element ||
+	    document.mozPointerLockElement    === element ||
+        document.webkitPointerLockElement === element) 
+	{
+		// Pointer was just locked, enable the mousemove listener
+		document.addEventListener("mousemove", moveCallback, false);
+	} 
+	else 
+	{
+		// Pointer was just unlocked, disable the mousemove listener
+		document.removeEventListener("mousemove", moveCallback, false);
+	}
+}
+
+
+function animate() 
+{
+    requestAnimationFrame( animate );
+	render();		
+	update();
+}
+
+function collision(obstacles) {
+
+	for (var vertexIndex = 0; vertexIndex < person.geometry.vertices.length; vertexIndex++)
+	{       
+		var localVertex = person.geometry.vertices[vertexIndex].clone();
+		var globalVertex = localVertex.applyMatrix4(person.matrix);
+		var directionVector = globalVertex.sub( person.position );
+
+		var ray = new THREE.Raycaster( person.position, directionVector.clone().normalize() );
+		var collisionResults = ray.intersectObjects( obstacles );
+		if ( collisionResults.length > 0 && collisionResults[0].distance < directionVector.length() ) 
+		{
+		 return true;
+        }
+	}
+  return false;
+}
+
+
+function collisionEnemy(oddaljen) {
+	var distance = DiceBlue2.position.distanceTo(person.position);
+	if(distance <=oddaljen)
+	{
+		return true;
+	}
+	return false;
+}
+
+function pobralToken() {
+	if(!osebaImaToken)
+	{
+		var distance = token.position.distanceTo(person.position);
+		if(distance <=200)
+		{
+			return true;
+		}
+		return false;
+	}
+}
+
+
+
+function tokenVrnjen()
+{
+	if(osebaImaToken)
+	{
+		var distance = skale.position.distanceTo(person.position);
+		if(distance <=300)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+function pogovorSkala()
+{
+	if(skale && person)
+	{
+	var distance = skale.position.distanceTo(person.position);
+	if(distance <=300)
+	{
+		return true;
+	}
+	return false;
+	}
+}
+function update()
+{   
+	if(jeStatika)
+	{
+	shaderTime += 0.1;
+	statics.uniforms[ "time"].value = shaderTime;
+	}
+	stats.update();
+	var delta = clock.getDelta(); // seconds since last update
+	var moveDistance = 1000 * delta; // 200 pixels per second  // should be velocity?
+	var rotateAngle = Math.PI / 4 * delta;   // pi/4 radians (45 degrees) per second
+	var cursorSpeed = 200 * delta;
+	var duhDistanceM = ghostMove * delta;
+	
+	
+
+	move = { xDist: 0, yAngle: 0, zDist: 0 };
+	
+	
+
+
+	// keyboard fallback
+	
+	// forwards/backwards
+	var playerMove = false;
+	if (keyboard.pressed("W"))
+	{
+	    move.zDist -= moveDistance;
+		playerMove = true;
+    }   
+	if (keyboard.pressed("S"))
+	{
+		move.zDist += moveDistance;
+		playerMove = true;
+	}
+	// turn left/right
+	if (keyboard.pressed("Q"))
+	{
+		move.yAngle += rotateAngle;
+		playerMove = true;
+	}
+	if (keyboard.pressed("E"))
+	{
+		move.yAngle -= rotateAngle;
+		playerMove = true;
+	}
+	// left/right (strafe)
+	if ( keyboard.pressed("A") )
+	{
+		move.xDist -= moveDistance;
+		playerMove = true;
+	}
+	if ( keyboard.pressed("D") )
+	{
+		move.xDist += moveDistance;
+		playerMove = true;
+	}
+		
+	
+	move.yAngle -= rotateAngle * mouseLook.x * 0.1;
+	mouseLook.x = 0;
+		
+	camera.rotateX( -rotateAngle * mouseLook.y * 0.05 );
+	mouseLook.y = 0;
+		
+
+
+
+	person.translateZ(move.zDist);
+	
+
+	person.rotateY(move.yAngle);
+	person.translateX(move.xDist);
+
+	person.updateMatrix();
+
+	if (collision(obstacles)) {
+	    person.translateX(-move.xDist);
+	    person.rotateY(-move.yAngle);
+	    person.translateZ(-move.zDist);
+	    person.updateMatrix();
+	}
+	
+	
+	if (collision(obstaclesLab)) {
+	    person.translateX(-move.xDist);
+	    person.rotateY(-move.yAngle);
+	    person.translateZ(-move.zDist);
+	    person.updateMatrix();
+	}
+	
+	if (collision(obstacles)) {
+	    person.translateY(-person.velocity.y);
+	    person.updateMatrix();
+	    person.velocity = new THREE.Vector3(0, 0, 0);
+	}
+
+
+	if (keyboard.pressed("space") && (person.velocity.y == 0))
+	{
+	    person.velocity = new THREE.Vector3(0, 7, 0);
+	}
+	person.velocity.add(gravity.clone().multiplyScalar(delta));
+	person.translateY(person.velocity.y);
+	person.updateMatrix();
+
+
+
+
+
+	if(person.position.z >	-244)
+	{
+		if(STlevel == 5 && !playerMove)
+		{
+		
+		}
+		else{
+			DiceBlue2.lookAt(person.position);
+		
+			if (DiceBlue2.position.z < person.position.z) {
+				DiceBlue2.translateZ(duhDistanceM );
+			}
+
+			if (DiceBlue2.position.z > person.position.z) {
+				DiceBlue2.translateZ(duhDistanceM );
+			}
+		}
+	}   
+
+
+	if(STlevel == 1)
+	{
+		if (collisionEnemy(1500)) {
+				var efekt = Math.floor((Math.random() * (3)) + 1);
+				switch (efekt) {
+				case 1:
+				casLucUgasjena = clock.getElapsedTime();
+				casLucUgasjena+=3;
+				spotlight.intensity = 0;
+				jeUgasjena = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 2:
+				casJeBlurry = clock.getElapsedTime();
+				casJeBlurry+=3;
+				jeBlurry = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 3:
+				casJeStatika = clock.getElapsedTime();
+				casJeStatika+=4;
+				jeStatika = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				}
+			}
+	}
+
+	if(STlevel == 2)
+	{
+		if (collisionEnemy(1250)) {
+				var efekt = Math.floor((Math.random() * (3)) + 1);
+				switch (efekt) {
+				case 1:
+				casLucUgasjena = clock.getElapsedTime();
+				casLucUgasjena+=3;
+				spotlight.intensity = 0;
+				jeUgasjena = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 2:
+				casJeBlurry = clock.getElapsedTime();
+				casJeBlurry+=5;
+				jeBlurry = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 3:
+				casJeStatika = clock.getElapsedTime();
+				casJeStatika+=6;
+				jeStatika = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				}
+			}
+	}
+
+	if(STlevel == 3)
+	{
+		if (collisionEnemy(1000)) {
+				var efekt = Math.floor((Math.random() * (3)) + 1);
+				switch (efekt) {
+				case 1:
+				casLucUgasjena = clock.getElapsedTime();
+				casLucUgasjena+=3;
+				spotlight.intensity = 0;
+				jeUgasjena = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 2:
+				casJeBlurry = clock.getElapsedTime();
+				casJeBlurry+=7;
+				jeBlurry = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 3:
+				casJeStatika = clock.getElapsedTime();
+				casJeStatika+=8;
+				jeStatika = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				}
+			}
+	}
+
+	if(STlevel == 4)
+	{
+		if (collisionEnemy(750)) {
+				var efekt = Math.floor((Math.random() * (3)) + 1);
+				switch (efekt) {
+				case 1:
+				casLucUgasjena = clock.getElapsedTime();
+				casLucUgasjena+=3;
+				spotlight.intensity = 0;
+				jeUgasjena = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 2:
+				casJeBlurry = clock.getElapsedTime();
+				casJeBlurry+=9;
+				jeBlurry = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 3:
+				casJeStatika = clock.getElapsedTime();
+				casJeStatika+=10;
+				jeStatika = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				}
+			}
+	}
+
+	if(STlevel == 5)
+	{
+		if (collisionEnemy(500)) {
+				var efekt = Math.floor((Math.random() * (3)) + 1);
+				switch (efekt) {
+				case 1:
+				casLucUgasjena = clock.getElapsedTime();
+				casLucUgasjena+=5;
+				spotlight.intensity = 0;
+				jeUgasjena = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 2:
+				casJeBlurry = clock.getElapsedTime();
+				casJeBlurry+=12;
+				jeBlurry = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				case 3:
+				casJeStatika = clock.getElapsedTime();
+				casJeStatika+=13;
+				jeStatika = true;
+				var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+				var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+				DiceBlue2.position.set(randX*500, 200, randY*500);
+					break;
+				}
+			}
+	}
+	
+	
+	if (pobralToken()) {
+	    var de = document.getElementById("narrationText");
+        de.innerHTML="Bravo dobil si Token sedaj se moras s njim vrniti do mize"
+		scene.remove(token);
+		casPogovMiza = clock.getElapsedTime();
+		casPogovMiza+=5;
+		pogovor= true;
+        osebaImaToken = true;
+	}
+	
+	if(pogovorSkala() && STlevel == 0)
+	{
+		STlevel ++;
+		var de = document.getElementById("levelTxt");
+		de.innerHTML="Stopnja "+ STlevel;
+		var de = document.getElementById("narrationText");
+		de.innerHTML="Ta miza tukaj stoji ze 1000 let. Zaradni njenega prekledstva se vse nezgode na Zemlji dogajajo! Ti si bil izbran za da gres v labirint pri rdeci luci in poisces Tokene s katerimi bos unicil prekledstvo";
+		casPogovMiza = clock.getElapsedTime();
+		casPogovMiza+=15;
+		pogovor= true;
+	}
+	if(clock.getElapsedTime() >= casPogovMiza && pogovor)
+	{
+		var de = document.getElementById("narrationText");
+		de.innerHTML="";
+		stenaZ.position.set(11* 500 + 250, 250, -250);
+		pogovor = false;
+	}
+	
+	if(clock.getElapsedTime() >= casLucUgasjena && jeUgasjena)
+	{
+		jeUgasjena = false;
+		spotlight.intensity = 3;
+		if(playerMoveEffect)
+		{
+			zivljenja--;
+			spotlight.color.setHex( 0xff0000 );
+			casLucRdeca = clock.getElapsedTime();
+			casLucRdeca+=0.5;
+		}
+		playerMoveEffect = false;
+	}
+	
+	if(clock.getElapsedTime() >= casLucRdeca)
+	{
+		spotlight.color.setHex( 0x93c572 );
+	}
+	
+	if(clock.getElapsedTime() >= casJeStatika && jeStatika)
+	{
+		jeStatika = false;
+		if(playerMoveEffect)
+		{
+			zivljenja--;
+		}
+		playerMoveEffect = false;
+	}
+	
+	if(clock.getElapsedTime() >= casJeBlurry && jeBlurry)
+	{
+		jeBlurry = false;
+		if(playerMoveEffect)
+		{
+			zivljenja--;
+		}
+		playerMoveEffect = false;
+	}
+	
+	if(clock.getElapsedTime() < casLucUgasjena)
+	{
+		if(playerMove)
+		{
+			playerMoveEffect = true;
+		}
+	}
+	
+	if(clock.getElapsedTime() < casJeStatika)
+	{
+		if(playerMove)
+		{
+			playerMoveEffect = true;
+		}
+	}
+	
+	if(clock.getElapsedTime() < casJeBlurry && jeBlurry)
+	{
+		if(playerMove)
+		{
+			playerMoveEffect = true;
+		}
+	}
+	
+	var de = document.getElementById("zivljenjaTxt");
+	de.innerHTML="Zivljenja:"+ zivljenja;
+
+	if(zivljenja == 0)
+	{
+		window.location.href='./defeat.html';
+	}
+	if(tokenVrnjen())
+	{
+		if(STlevel == 5)
+		{
+			window.location.href='./victory.html';
+		}
+		osebaImaToken = false;
+		var de = document.getElementById("narrationText");
+        de.innerHTML="Bodi previden v labirintu sedaj te pošast še hitreje išče"
+		casPogovMiza = clock.getElapsedTime();
+		casPogovMiza+=10;
+		pogovor= true;
+		STlevel ++;
+		var de = document.getElementById("levelTxt");
+		de.innerHTML="Stopnja "+ STlevel;
+		ghostMove+=100;
+		
+		
+		for(var x = 0; x< obstaclesLab.length; x++)
+		{
+			scene.remove(obstaclesLab[x]);
+		}
+		obstaclesLab = [];
+		
+
+		for(var x = 0; x< labStene[STlevel-1].length;x++)
+		{
+			obstaclesLab.push(labStene[STlevel-1][x]);
+			scene.add(labStene[STlevel-1][x]);
+		}
+	
+		generateTokens()
+		var randX = Math.floor((Math.random() * (22 - 1)) + 1);
+		var randY = Math.floor((Math.random() * (22 - 1)) + 1);
+		DiceBlue2.position.set(randX*500, 200, randY*500);
+	}
+	
+	if (collision(obstacles)) {
+	    person.translateY(-person.velocity.y);
+	    person.updateMatrix();
+	    person.velocity = new THREE.Vector3(0, 0, 0);
+	}
+	
+	person.updateMatrix();	
+	
+} 
+
+
+
+function render() 
+{
+	if(jeBlurry)
+	{
+		composer.render();
+	}
+	if(jeStatika)
+	{
+		composer2.render();
+	}
+	if(!jeBlurry && !jeStatika)
+	{
+		renderer.render( scene, camera );
+	}
+}
+
+</script>
+
+</body>
+</html>

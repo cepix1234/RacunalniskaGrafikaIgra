@@ -1,0 +1,280 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+	<title>DAS GAME</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link rel=stylesheet href="css/base.css"/>
+	<style>
+	.gumb {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 16px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 20px;
+    -webkit-transition-duration: 0.4s;
+    transition-duration: 0.4s;
+    cursor: pointer;
+	}
+
+	.gumbG1 {
+		border-radius: 50% 50% 50% 50%;
+		background-color: white; 
+		color: black; 
+		border: 2px solid #4CAF50;
+	}
+	.gumbG1:hover {
+		background-color: #4CAF50;
+		color: white; 
+	}
+	</style>
+</head>
+<body>
+
+<!--<script src="js/Three.js"></script>-->
+<script src="js/Detector.js"></script>
+<script src="js/Stats.js"></script>
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+
+
+<script src="http://mrdoob.github.com/three.js/build/three.min.js"></script>
+
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/CopyShader.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/HorizontalBlurShader.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/shaders/VerticalBlurShader.js"></script>
+
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/RenderPass.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/MaskPass.js"></script>
+<script src="http://mrdoob.github.com/three.js/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="shaders/StaticShader.js"></script>
+	
+	
+<!-- Simplfied gamepad interaction (patched version) -->
+<script src="js/gamepad_uncompressed.js"></script>
+
+
+<!-- ---------------- Custom Shader Code ------------------------ -->
+<script id="vertexShader" type="x-shader/x-vertex">
+varying vec2 vUv;
+void main() 
+{ 
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+</script>
+
+<!-- fragment shader a.k.a. pixel shader -->
+<script id="fragmentShader" type="x-shader/x-vertex"> 
+uniform sampler2D baseTexture;
+uniform float baseSpeed;
+uniform sampler2D noiseTexture;
+uniform float noiseScale;
+uniform float alpha;
+uniform float time;
+
+varying vec2 vUv;
+void main() 
+{
+	vec2 uvTimeShift = vUv + vec2( -0.7, 1.5 ) * time * baseSpeed;	
+	vec4 noiseGeneratorTimeShift = texture2D( noiseTexture, uvTimeShift );
+	vec2 uvNoiseTimeShift = vUv + noiseScale * vec2( noiseGeneratorTimeShift.r, noiseGeneratorTimeShift.b );
+	vec4 baseColor = texture2D( baseTexture, uvNoiseTimeShift );
+
+	baseColor.a = alpha;
+	gl_FragColor = baseColor;
+}  
+</script>
+<!-- ----------------------------------------------------------- -->
+
+<audio loop="loop" autoplay="autoplay">  
+		<source src="audio/Casper the friendly ghost theme.mp3" /> 
+</audio> 
+ 
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px;font-size:500%;"></div>
+<label style="position:absolute; left:50%;top:40%; font-size:30px; color:white;">DEFEAT!!!</label>
+<button class="gumb gumbG1" onclick="window.location.href='./index.html'" style="position:absolute; left:50%;top:50%; font-size:30px;">Back</button>
+
+<script>
+
+
+// MAIN
+
+// standard global variables
+var container, scene, camera, renderer, controls, stats, spotlight, crossHairH;
+var keyboard = new THREEx.KeyboardState();
+var clock = new THREE.Clock();
+var skyBox;
+// custom global variables
+var DiceBlue2;
+var spotlight, dicemove;
+var obrnjen = false;
+
+init();
+animate();
+
+// FUNCTIONS 		
+function init() 
+{
+	// SCENE
+	scene = new THREE.Scene();
+
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 1, FAR = 20000;
+	camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT, NEAR, FAR);
+	scene.add(camera);
+	
+	// RENDERER
+	if ( Detector.webgl )
+		renderer = new THREE.WebGLRenderer( {antialias:true} );
+	else
+		renderer = new THREE.CanvasRenderer(); 
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	container = document.getElementById( 'ThreeJS' );
+	container.appendChild( renderer.domElement );
+	
+	
+	
+	// EVENTS
+	THREEx.WindowResize(renderer, camera);
+	THREEx.FullScreen.bindKey({ charCode : 'm'.charCodeAt(0) });
+	
+	// STATS
+	stats = new Stats();
+	stats.domElement.style.position = 'absolute';
+	stats.domElement.style.bottom = '0px';
+	stats.domElement.style.zIndex = 100;
+	container.appendChild( stats.domElement );
+	
+	
+	
+	// LIGHT
+	renderer.shadowMapEnabled = true;
+	spotlight = new THREE.SpotLight(0x93c572);
+	spotlight.shadowDarkness = 1;
+	spotlight.shadowMapWidth = 1024;
+	spotlight.shadowMapHeight = 1024;
+	spotlight.shadowCameraNear = 10;
+	spotlight.shadowCameraFar = 10;
+	spotlight.shadowCameraFov = 10;
+    spotlight.intensity = 3;
+
+
+	
+    // must enable shadow casting ability for the light
+	spotlight.castShadow = true;
+	
+    //
+
+	
+
+
+	
+	////////////
+	// CUSTOM //
+	////////////
+
+	generatePerson();
+
+	
+	
+	
+	var loader = new THREE.JSONLoader();
+    loader.load('./models/casper.json', function(geometry, materials) {
+        duhec = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({ map: THREE.ImageUtils.loadTexture("images/Creature.png"), shading: THREE.FlatShading, vertexColors: THREE.VertexColors }));
+		duhec.scale.set(100, 100, 100);
+		duhec.rotateZ(Math.PI);
+
+		DiceBlue2 = new THREE.Object3D();
+		DiceBlue2.add(duhec);
+		DiceBlue2.position.set(-2000, 200,-2000 );
+		scene.add(DiceBlue2);
+    });
+	
+	
+}
+
+
+
+
+function generatePerson() {
+
+	boundingG = new THREE.CubeGeometry(100, 190, 100);
+    boundingM = new THREE.MeshBasicMaterial({ color: 0xff0000, visible: false });
+    person = new THREE.Mesh(boundingG, boundingM);
+    person.add(camera);
+    camera.position.set(0, 185, 0); // first-person view
+	var crossHairG = new THREE.CubeGeometry(0.05, 0.3, 0);
+	crossHairH = new THREE.Mesh(crossHairG, new THREE.MeshBasicMaterial( {color:0xffffff}   )  );
+	camera.add(crossHairH);
+	crossHairH.visible = false;
+	crossHairH.position.set(0,0,-10);
+	
+    person.position.set(0, 0, 0);
+    person.rotation.y = Math.PI / 2.0;
+	
+	camera.add(spotlight);
+	spotlight.target = crossHairH;
+	spotlight.position.set(0,0,20);
+	
+    scene.add(person);
+
+}
+
+
+
+
+function animate() 
+{
+    requestAnimationFrame( animate );
+	render();		
+	update();
+}
+
+
+function update()
+{   
+	if(DiceBlue2)
+	{
+		stats.update();
+		var delta = clock.getDelta(); // seconds since last update
+		var moveDistance = 1000 * delta;
+		DiceBlue2.translateZ(moveDistance*dicemove);
+		if(!obrnjen && DiceBlue2.position.z < 2000)
+		{
+			DiceBlue2.translateZ(moveDistance*1);
+		}
+		if(!obrnjen && DiceBlue2.position.z >= 1999)
+		{
+			DiceBlue2.rotateY(Math.PI);
+			obrnjen = true;
+		}
+		if(obrnjen && DiceBlue2.position.z > -2000)
+		{
+			DiceBlue2.translateZ(moveDistance*1);
+		}
+		if(obrnjen && DiceBlue2.position.z <= -1999)
+		{
+			DiceBlue2.rotateY(Math.PI);
+			obrnjen = false;
+		}
+	}
+} 
+
+
+
+function render() 
+{
+	renderer.render( scene, camera );
+}
+
+</script>
+
+</body>
+</html>
